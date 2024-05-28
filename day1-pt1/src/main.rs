@@ -17,28 +17,50 @@ struct Args {
     file_name: Option<String>,
 }
 
-async fn read_input( file_name: &str, tx: Sender<String> ) -> Result<()> {
+async fn read_input( file_name: &str, tx: Sender<String>) -> Result<()> {
 
     let mut file = File::open( file_name )?;
 
-    let mut file_contents:Vec<u8> = Vec::new();
+    const BUF_SIZE:usize = 16;
 
-    file.read_to_end( &mut file_contents )?;
+    let mut buffer:[u8; BUF_SIZE] = [0;BUF_SIZE];
+    let mut current_chunk = String::new();
 
-    let string_contents = String::from_utf8( file_contents )?;
+    loop {
+        if let Ok( read ) = file.read( &mut buffer ) {
+            let string = String::from_utf8(buffer[0..read].to_vec()).unwrap();
+            tx.send( string );
 
-    for line in string_contents.lines() {
-        if line != "" {
-            if let Err( err ) = tx.send( line.to_string() ) {
-                eprintln!( "Error in sending {err}!" );
+            if read < BUF_SIZE {
+                break;
             }
+        } else {
+            break;
         }
     }
+
 
     Ok( () )
 }
 
-async fn distribute_work( rx: Receiver<String> ) -> Result<()> {
+async fn chunker( rx: Receiver<String>, tx: Sender<String> ) -> Result<()> {
+
+    let mut current_chunk = String::new();
+
+    while let Ok( chunk ) = rx.recv() {
+        current_chunk.push_str( &chunk );
+
+        while let Some( (first,second ) ) = current_chunk.split_once( "\n" ) {
+            if let Err( err ) = tx.send( first.to_string() ) {
+                eprintln!( "Error in sending {err}!" );
+            }
+            current_chunk = second.to_string();
+        }
+    }
+    Ok( () )
+}
+
+async fn distribute_work( rx: Receiver<String>) -> Result<()> {
 
     let mut join_set: JoinSet<Option<usize>> = JoinSet::new();
 
@@ -97,13 +119,15 @@ async fn main() -> Result<()> {
     println!( "Game Calculator..." );
 
     let (tx_line,rx_line) = channel::<String>(); 
+    let (tx_line2,rx_line2) = channel::<String>(); 
 
     let file_name = args.file_name.unwrap_or("input".to_string());
 
     let input_future = read_input(&file_name, tx_line);
-    let distribute_work_future = distribute_work( rx_line);
+    let chunker_future = tokio::spawn(chunker(rx_line, tx_line2));
+    let distribute_work_future = tokio::spawn(distribute_work( rx_line2));
 
-    join!( input_future, distribute_work_future ).0?;
+    join!( input_future, chunker_future, distribute_work_future ).0?;
 
     Ok( () )
 }

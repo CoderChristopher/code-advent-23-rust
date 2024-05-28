@@ -1,0 +1,1 @@
+/home/chris/projects/rust/advent-2023/day2-pt1/target/debug/day2-pt1: /home/chris/projects/rust/advent-2023/day2-pt1/src/main.rs /home/chris/projects/rust/advent-2023/day2-pt1/src/processing.rs /home/chris/projects/rust/advent-2023/day2-pt1/src/structs.rs
